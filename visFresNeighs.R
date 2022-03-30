@@ -2,7 +2,7 @@
 ## Quick visualisation of Frescalo neighbourhoods ##
 ####################################################
 ## O.L. Pescott, olipes@ceh.ac.uk
-## 17/01/2022
+## 3v. 30/03/2022
 #rm(list=ls())
 library(shiny)
 library(magrittr)
@@ -19,6 +19,8 @@ library(DT)
 ## Load data
 #britNew <- read.csv(file = "data/britishFresWeights_Jan2022_v0.csv", header = T)[,c(2:4)]
 #save(britNew, file = "data/britishFresWeights_Jan2022_v0.rdata")
+#britSparNew <- read.csv(file = "data/britishFresWeights_Feb2022_SPARTA.csv", header = T)[,c(2:4)]
+#save(britSparNew, file = "data/britishFresWeights_Feb2022_SPARTA.rdata")
 #engNew <- read.csv(file = "data/englishFresWeights_Feb2022_v0.csv", header = T)[,c(2:4)]
 #save(engNew, file = "data/englishFresWeights_Feb2022_v0.rdata")
 #walNew <- read.csv(file = "data/welshFresWeights_Feb2022_v0.csv", header = T)[,c(2:4)]
@@ -61,8 +63,9 @@ tabsetPanel(
     br(),
     "This app has been created to allow for the quick visualisation of neighbourhoods used in the Frescalo method",
     tags$a(href="https://besjournals.onlinelibrary.wiley.com/doi/abs/10.1111/j.2041-210X.2011.00146.x", "(Hill, 2012)."),
-    "Files for several countries are given as downloads via the links below.",
+    "Files for British and Irish countries, and one or two counties, are given as downloads via the links below.",
     hr(),
+    h4("Country level"),
     tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/Britain.zip", "Britain"),
     br(),
     tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/England.zip", "England"),
@@ -76,6 +79,11 @@ tabsetPanel(
     tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/Northern\ Ireland.zip", "Northern Ireland"),
     br(),
     tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/Republic\ of\ Ireland.zip", "Republic of Ireland"),
+    br(),
+    hr(),
+    h4("County level"),
+    tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/Oxon.zip", "Oxfordshire"),
+    br(),
     hr(),
     h4("Contact"),
     HTML("These neighbourhoods were created by Dr Oli Pescott at the Biological Records Centre within UKCEH Wallingford.
@@ -102,9 +110,9 @@ tabsetPanel(
         h4("Coordinate system"),
         selectInput(inputId = "epsg", label = ("Choose the EPSG code used for your site coordinates projection"),
                     choices = c("27700 (Britain)" = "27700", "29902 (Ireland)" = "29902", "4326 (Global)" = "4326"), selected = NULL, multiple = F),
-        #h4("Choose area"),
-        #selectInput(inputId = "country", label = ("Choose country"),
-        #            choices = c("Britain", "Ireland"), selected = NULL, multiple = T),
+        h4("Scale"),
+        selectInput(inputId = "scale", label = ("Choose visualisation scale"),
+                    choices = c("Hectad (10 km)" = "ten", "Tetrad (2 km)" = "two"), selected = NULL, multiple = F),
         h4("Target site"),
         selectizeInput(inputId = "site", label = ("Select target site neighbourhood to visualise"),
                     choices = NULL, selected = NULL, multiple = F),
@@ -114,8 +122,8 @@ tabsetPanel(
         #br(),
         #hr(),
         h4("Selected Frescalo neighbourhood"), # add output text here
-        HTML("<li>For the selected 10 km square, the 100 hectad neighbourhood of this target (including the target itself) will be mapped.</li>
-             <li>The radius of each circle has been scaled by the weight assigned in the file provided by the user.</li>
+        HTML("<li>For the selected 10 or 2 km square, the 100 square neighbourhood of this target (including the target itself) will be mapped.</li>
+             <li>The radius of each circle is scaled by the weight assigned in the file provided by the user.</li>
              <li>Note that here all squares in a neighbourhood are mapped, whereas in Hill (2012) the visualisation suppressed
              squares with weights <0.05.</li>"),
         br(),
@@ -184,6 +192,9 @@ server <- function(input, output, session) {
   
   points <- reactive({
     
+    scl <- input$scale
+    if (is.null(scl))
+      return(NULL) 
     epsg <- input$epsg
     if (is.null(epsg))
       return(NULL) 
@@ -201,10 +212,11 @@ server <- function(input, output, session) {
     #crs(datXY) <- paste0("+init=EPSG:",input$epsg)
     ## st_buffer fails if weights too small
     datXY$weights <- ifelse(datXY$weights < 1.0e-10, 1.0e-10, datXY$weights)
-    if (is.null(epsg)) {
+    if (is.null(epsg) | is.null(scl)) {
         return(NULL) } else {
       datSf <- st_as_sf(datXY, coords = c(names(datXY)[4], names(datXY)[5]), crs = as.numeric(epsg))
-      datSfbuf <- st_buffer(datSf, dist = 4000*datSf$weights)
+      distSel <- ifelse(scl == "ten", 4000, 1000)
+      datSfbuf <- st_buffer(datSf, dist = distSel*datSf$weights)
       datSf2 <- st_transform(datSfbuf, 4326)
         }
   })
