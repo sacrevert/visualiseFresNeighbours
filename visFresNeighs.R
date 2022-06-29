@@ -2,7 +2,8 @@
 ## Quick visualisation of Frescalo neighbourhoods ##
 ####################################################
 ## O.L. Pescott, olipes@ceh.ac.uk
-## 3v. 30/03/2022
+## 17/01/2022
+## Update 29/06/2022 for France
 #rm(list=ls())
 library(shiny)
 library(magrittr)
@@ -13,6 +14,7 @@ library(rgdal)
 library(colorRamps)
 library(data.table)
 library(DT)
+load(file = "data/idfBB.rdata") #bounding box for IDF (France vis)
 #### Required for processing prior to visualisation
 #source('gridref_let2num.R')
 ####
@@ -63,9 +65,9 @@ tabsetPanel(
     br(),
     "This app has been created to allow for the quick visualisation of neighbourhoods used in the Frescalo method",
     tags$a(href="https://besjournals.onlinelibrary.wiley.com/doi/abs/10.1111/j.2041-210X.2011.00146.x", "(Hill, 2012)."),
-    "Files for British and Irish countries, and one or two counties, are given as downloads via the links below.",
+    "Files for British and Irish countries, and one or two other areas, are given as downloads via the links below.",
     hr(),
-    h4("Country level"),
+    h4("Britain and Ireland"),
     tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/Britain.zip", "Britain"),
     br(),
     tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/England.zip", "England"),
@@ -81,8 +83,12 @@ tabsetPanel(
     tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/Republic\ of\ Ireland.zip", "Republic of Ireland"),
     br(),
     hr(),
-    h4("County level"),
+    h4("British and Irish counties"),
     tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/Oxon.zip", "Oxfordshire"),
+    br(),
+    hr(),
+    h4("International"),
+    tags$a(href="https://github.com/sacrevert/frescaloNeighbourhoods/blob/main/IDF.zip", "Ile-de-France"),
     br(),
     hr(),
     h4("Contact"),
@@ -108,11 +114,12 @@ tabsetPanel(
                     '.rdata'
                   )),
         h4("Coordinate system"),
-        selectInput(inputId = "epsg", label = ("Choose the EPSG code used for your site coordinates projection"),
-                    choices = c("27700 (Britain)" = "27700", "29902 (Ireland)" = "29902", "4326 (Global)" = "4326"), selected = NULL, multiple = F),
+        selectizeInput(inputId = "epsg", label = ("Choose the EPSG code used for your site coordinates projection, or add the EPSG code"),
+                    choices = c("27700 (Britain)" = "27700", "29902 (Ireland)" = "29902", "4326 (Global)" = "4326", "2154 (France)" = "2154"), 
+                    selected = NULL, multiple = F, options = list(create = TRUE)),
         h4("Scale"),
-        selectInput(inputId = "scale", label = ("Choose visualisation scale"),
-                    choices = c("Hectad (10 km)" = "ten", "Tetrad (2 km)" = "two"), selected = NULL, multiple = F),
+        selectizeInput(inputId = "scale", label = ("Choose visualisation scale, or add your own value in km as a number"),
+                    choices = c("Hectad (10 km)" = "10", "Tetrad (2 km)" = "2"), selected = NULL, multiple = F, options = list(create = TRUE)),
         h4("Target site"),
         selectizeInput(inputId = "site", label = ("Select target site neighbourhood to visualise"),
                     choices = NULL, selected = NULL, multiple = F),
@@ -122,8 +129,8 @@ tabsetPanel(
         #br(),
         #hr(),
         h4("Selected Frescalo neighbourhood"), # add output text here
-        HTML("<li>For the selected 10 or 2 km square, the 100 square neighbourhood of this target (including the target itself) will be mapped.</li>
-             <li>The radius of each circle is scaled by the weight assigned in the file provided by the user.</li>
+        HTML("<li>For the selected site unit, the site neighbourhood of this target (including the target itself) will be mapped.</li>
+             <li>The radius of each circle is determined by the weight assigned in the file provided by the user, and is scaled for visualisation by the \"Scale\" number selected opposite.</li>
              <li>Note that here all squares in a neighbourhood are mapped, whereas in Hill (2012) the visualisation suppressed
              squares with weights <0.05.</li>"),
         br(),
@@ -192,9 +199,9 @@ server <- function(input, output, session) {
   
   points <- reactive({
     
-    scl <- input$scale
+    scl <- as.numeric(input$scale)
     if (is.null(scl))
-      return(NULL) 
+      return(NULL)
     epsg <- input$epsg
     if (is.null(epsg))
       return(NULL) 
@@ -215,7 +222,11 @@ server <- function(input, output, session) {
     if (is.null(epsg) | is.null(scl)) {
         return(NULL) } else {
       datSf <- st_as_sf(datXY, coords = c(names(datXY)[4], names(datXY)[5]), crs = as.numeric(epsg))
-      distSel <- ifelse(scl == "ten", 4000, 1000)
+      if(scl == 10) {
+        distSel <- 4000 } else if (scl == 2) {
+        distSel <- 1000 } else {
+        distSel <- (scl*1000)/2  
+        }
       datSfbuf <- st_buffer(datSf, dist = distSel*datSf$weights)
       datSf2 <- st_transform(datSfbuf, 4326)
         }
@@ -237,10 +248,10 @@ server <- function(input, output, session) {
                        proj4def = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs",
                        resolutions = 1,#1.5^(25:15),
                        bounds=c(-20,5,48,65))
-    
+    if (epsg == "2154") { # France
     leaflet(datSp) %>%
-      setView(59.9, -2.9, zoom = 6) %>%
-      setMaxBounds(-20,48,5,65) %>%
+      setView(2.4, 48.9, zoom = 7) %>%
+      setMaxBounds(lng1 = idfBB['xmin'], lat1 = idfBB['ymin'], lng2 = idfBB['xmax'], lat2 = idfBB['ymax']) %>%
       # Base groups
       addTiles(group = "OSM") %>%
       addProviderTiles(provider=providers$Esri.WorldImagery, group = "Satellite") %>%
@@ -251,6 +262,22 @@ server <- function(input, output, session) {
         baseGroups = c("OSM", "Satellite"),
         overlayGroups = c("Neighbourhood"),
         options = layersControlOptions(collapsed = FALSE))
+    } else { # UK/Ireland
+      leaflet(datSp) %>%
+        setView(-2.9, 59.9, zoom = 6) %>%
+        setMaxBounds(-20,48,5,65) %>%
+        # Base groups
+        addTiles(group = "OSM") %>%
+        addProviderTiles(provider=providers$Esri.WorldImagery, group = "Satellite") %>%
+        # Overlay neighbourhood
+        addPolygons(opacity = 0.7, smoothFactor = 0.5, group = "Neighbourhood") %>%
+        # Layers control
+        addLayersControl(
+          baseGroups = c("OSM", "Satellite"),
+          overlayGroups = c("Neighbourhood"),
+          options = layersControlOptions(collapsed = FALSE))
+      
+    }
     
   })
   
